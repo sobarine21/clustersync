@@ -32,8 +32,8 @@ def query_autorag(query: str):
         "queryLength": len(query),
         "maxResults": 20,
         "scoreThreshold": 0.15,
-        "autoragDatabase": "ipodb",
-        "entityType": "IPO_COMPLIANCE"
+        "autoragDatabase": "ipodb"
+        # "entityType" REMOVED as per request
     }
 
     if debug_mode:
