@@ -3,6 +3,7 @@ import requests
 import os
 from google import genai
 from google.genai import types
+import json
 
 # -----------------------------
 # CONFIGURATION
@@ -12,7 +13,10 @@ AUTORAG_NAME = st.secrets["CLOUDFLARE_AUTORAG_NAME"]
 API_TOKEN = st.secrets["CLOUDFLARE_API_TOKEN"]
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
-AUTORAG_URL = "https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/autorag/rags/{AUTORAG_NAME}/search"
+AUTORAG_URL = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/autorag/rags/{AUTORAG_NAME}/search"
+
+# Enable debug sidebar
+debug_mode = st.sidebar.checkbox("🔍 Enable Debug Logs")
 
 # -----------------------------
 # FUNCTION: AutoRAG Search
@@ -32,13 +36,28 @@ def query_autorag(query: str):
         "entityType": "IPO_COMPLIANCE"
     }
 
-    response = requests.post(AUTORAG_URL, headers=headers, json=payload)
+    if debug_mode:
+        st.sidebar.subheader("🔧 AutoRAG Request Payload")
+        st.sidebar.code(json.dumps(payload, indent=2))
+        st.sidebar.subheader("🔧 API Endpoint")
+        st.sidebar.code(AUTORAG_URL)
 
-    if response.status_code == 200:
-        data = response.json()
-        return data.get("result", [])
-    else:
-        st.error(f"AutoRAG API Error: {response.status_code} - {response.text}")
+    try:
+        response = requests.post(AUTORAG_URL, headers=headers, json=payload)
+        if debug_mode:
+            st.sidebar.subheader("🧾 Raw AutoRAG Response")
+            st.sidebar.code(response.text)
+
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("result", [])
+        else:
+            error_data = response.json()
+            error_message = error_data.get("errors", [{}])[0].get("message", "Unknown error")
+            st.error(f"AutoRAG API Error {response.status_code}: {error_message}")
+            return []
+    except Exception as e:
+        st.error(f"Request failed: {str(e)}")
         return []
 
 # -----------------------------
@@ -68,7 +87,7 @@ def gemini_analysis(input_text: str):
         ):
             output += chunk.text
     except Exception as e:
-        st.error(f"Gemini Error: {str(e)}")
+        st.error(f"Gemini AI Error: {str(e)}")
         return ""
     
     return output
