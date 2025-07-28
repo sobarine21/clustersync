@@ -12,7 +12,7 @@ AUTORAG_NAME = st.secrets["CLOUDFLARE_AUTORAG_NAME"]
 API_TOKEN = st.secrets["CLOUDFLARE_API_TOKEN"]
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
-AUTORAG_URL = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/autorag/rags/{AUTORAG_NAME}/search"
+AUTORAG_URL = "https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/autorag/rags/{AUTORAG_NAME}/search"
 
 # -----------------------------
 # FUNCTION: AutoRAG Search
