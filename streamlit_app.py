@@ -4,16 +4,19 @@ import os
 from google import genai
 from google.genai import types
 
-# ----------------------------- #
-# CONFIGURATION & SECRETS
-# ----------------------------- #
-AUTORAG_URL = "https://api.cloudflare.com/client/v4/accounts/eb80b92269b2dc4b8ceb558428ebf2f7/autorag/rags/ipodb/search"
-API_TOKEN = st.secrets["API_TOKEN"]
+# -----------------------------
+# CONFIGURATION
+# -----------------------------
+ACCOUNT_ID = st.secrets["CLOUDFLARE_ACCOUNT_ID"]
+AUTORAG_NAME = st.secrets["CLOUDFLARE_AUTORAG_NAME"]
+API_TOKEN = st.secrets["CLOUDFLARE_API_TOKEN"]
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
-# ----------------------------- #
-# Cloudflare AutoRAG Query
-# ----------------------------- #
+AUTORAG_URL = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/autorag/rags/{AUTORAG_NAME}/search"
+
+# -----------------------------
+# FUNCTION: AutoRAG Search
+# -----------------------------
 def query_autorag(query: str):
     headers = {
         "Content-Type": "application/json",
@@ -30,21 +33,19 @@ def query_autorag(query: str):
     }
 
     response = requests.post(AUTORAG_URL, headers=headers, json=payload)
-    
+
     if response.status_code == 200:
         data = response.json()
-        matches = data.get("result", [])
-        return matches
+        return data.get("result", [])
     else:
         st.error(f"AutoRAG API Error: {response.status_code} - {response.text}")
         return []
 
-# ----------------------------- #
-# Gemini AI Analysis
-# ----------------------------- #
+# -----------------------------
+# FUNCTION: Gemini AI Analysis
+# -----------------------------
 def gemini_analysis(input_text: str):
     os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
-
     client = genai.Client(api_key=GEMINI_API_KEY)
 
     contents = [
@@ -54,64 +55,70 @@ def gemini_analysis(input_text: str):
         )
     ]
 
-    generate_content_config = types.GenerateContentConfig(
+    config = types.GenerateContentConfig(
         thinking_config=types.ThinkingConfig(thinking_budget=-1),
     )
 
     output = ""
-    for chunk in client.models.generate_content_stream(
-        model="gemini-2.5-flash",
-        contents=contents,
-        config=generate_content_config,
-    ):
-        output += chunk.text
+    try:
+        for chunk in client.models.generate_content_stream(
+            model="gemini-2.5-flash",
+            contents=contents,
+            config=config,
+        ):
+            output += chunk.text
+    except Exception as e:
+        st.error(f"Gemini Error: {str(e)}")
+        return ""
+    
     return output
 
-# ----------------------------- #
-# Streamlit App UI
-# ----------------------------- #
-st.set_page_config(page_title="DRHP AutoRAG + Gemini Analyzer", layout="wide")
+# -----------------------------
+# STREAMLIT APP UI
+# -----------------------------
+st.set_page_config(page_title="DRHP Compliance Analyzer", layout="wide")
 st.title("📘 DRHP Compliance Analyzer (AutoRAG + Gemini AI)")
 
 with st.form("query_form"):
-    query_input = st.text_area("Enter your DRHP-related query or topic:", height=150)
-    submitted = st.form_submit_button("Search and Analyze")
+    query_input = st.text_area("Enter your DRHP query or keyword(s):", height=150)
+    submitted = st.form_submit_button("Search & Analyze")
 
 if submitted and query_input.strip():
-    st.info("🔍 Searching AutoRAG...")
+    st.info("🔍 Performing semantic search via Cloudflare AutoRAG...")
     matches = query_autorag(query_input)
 
     if not matches:
         st.warning("No relevant results found.")
     else:
-        st.success(f"✅ Retrieved {len(matches)} relevant documents from AutoRAG.")
+        st.success(f"✅ Found {len(matches)} relevant context chunks.")
 
-        # Display retrieved context (optional preview)
-        with st.expander("View AutoRAG Retrieved Context"):
-            for i, match in enumerate(matches, 1):
-                st.markdown(f"**Result {i}**\n\n`Score: {match.get('score', 0)}`\n\n{match.get('text', '')[:1000]}...\n\n---")
+        # Show matched contexts
+        with st.expander("🔎 View Retrieved Contexts"):
+            for i, match in enumerate(matches, start=1):
+                st.markdown(f"**Result {i} — Score: {match.get('score', 0):.2f}**")
+                st.code(match.get("text", "")[:1500] + "..." if len(match.get("text", "")) > 1500 else match.get("text", ""))
+                st.markdown("---")
 
-        # Concatenate relevant chunks for Gemini
-        context_text = "\n\n---\n\n".join(match.get("text", "") for match in matches)
+        # Concatenate results into context
+        context_text = "\n\n---\n\n".join([m.get("text", "") for m in matches])
 
+        # Prompt for Gemini
         prompt = f"""
-Given the following IPO/DRHP excerpts retrieved via semantic search, analyze them for any red flags, regulatory compliance gaps, and other important takeaways for merchant bankers or legal teams.
+You are a regulatory compliance analyst. Review the following excerpts from a DRHP document and:
 
-### Excerpts:
+1. Identify red flags or inconsistencies
+2. Point out missing or vague disclosures as per SEBI ICDR, LODR, Companies Act
+3. Suggest any additional due diligence checks
+
+### DRHP Excerpts:
 {context_text}
+        """
 
-### Instructions:
-- Highlight key compliance issues (SEBI ICDR, LODR, Companies Act)
-- Point out any missing or vague disclosures
-- Suggest additional checks if necessary
-- Be clear and actionable in tone
-"""
+        st.info("🧠 Running Gemini AI analysis...")
+        result = gemini_analysis(prompt)
 
-        st.info("🧠 Analyzing with Gemini AI...")
-        output = gemini_analysis(prompt)
-
-        st.subheader("📊 Gemini AI Output")
-        st.markdown(output)
+        st.subheader("📊 Gemini AI Summary")
+        st.markdown(result)
 
 else:
-    st.warning("Please enter a query to begin.")
+    st.warning("Please enter a query to proceed.")
